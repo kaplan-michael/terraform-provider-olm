@@ -145,6 +145,7 @@ func (p *OLMProvider) Configure(ctx context.Context, req provider.ConfigureReque
 func (p *OLMProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewOLMv0Resource,
+		NewOperatorv0Resource,
 	}
 }
 

@@ -25,7 +25,7 @@ func NewOLMv0Resource() resource.Resource {
 }
 
 // OlmV0ResourceModel represents the structure of the resource data.
-type OlmV0ResourceModel struct {
+type Olmv0ResourceModel struct {
 	Namespace types.String `tfsdk:"namespace"`
 	Version   types.String `tfsdk:"version"`
 	ID        types.String `tfsdk:"id"`
@@ -80,7 +80,7 @@ func (r *OLMv0Resource) Configure(ctx context.Context, req resource.ConfigureReq
 
 // Create method for OLMv0Resource.
 func (r *OLMv0Resource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan OlmV0ResourceModel
+	var plan Olmv0ResourceModel
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -105,7 +105,7 @@ func (r *OLMv0Resource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Set resource ID and state on successful creation
 	id := "olm"
-	resp.State.Set(ctx, &OlmV0ResourceModel{
+	resp.State.Set(ctx, &Olmv0ResourceModel{
 		Namespace: plan.Namespace,
 		Version:   plan.Version,
 		ID:        types.StringValue(id),
@@ -113,7 +113,7 @@ func (r *OLMv0Resource) Create(ctx context.Context, req resource.CreateRequest, 
 }
 
 func (r *OLMv0Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var state OlmV0ResourceModel
+	var state Olmv0ResourceModel
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -150,8 +150,8 @@ func (r *OLMv0Resource) Read(ctx context.Context, req resource.ReadRequest, resp
 }
 
 func (r *OLMv0Resource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan OlmV0ResourceModel
-	var state OlmV0ResourceModel
+	var plan Olmv0ResourceModel
+	var state Olmv0ResourceModel
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -196,7 +196,7 @@ func (r *OLMv0Resource) Update(ctx context.Context, req resource.UpdateRequest, 
 }
 
 func (r *OLMv0Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state OlmV0ResourceModel
+	var state Olmv0ResourceModel
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
