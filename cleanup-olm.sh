@@ -1,3 +1,5 @@
+kubectl delete apiservices.apiregistration.k8s.io v1.packages.operators.coreos.com
+
 kubectl delete crd catalogsources.operators.coreos.com
 kubectl delete crd clusterserviceversions.operators.coreos.com
 kubectl delete crd installplans.operators.coreos.com

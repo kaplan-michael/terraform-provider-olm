@@ -13,8 +13,16 @@ description: |-
 ## Example Usage
 
 ```terraform
-provider "scaffolding" {
-  # example configuration here
+terraform {
+  required_providers {
+    olm = {
+      source = "kaplan-michael/olm"
+    }
+  }
+}
+
+provider "olm" {
+  kubeconfig = file("~/.kube/config")
 }
 ```
 
