@@ -7,7 +7,7 @@ toolchain go1.21.5
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/hashicorp/terraform-plugin-docs v0.16.0
-	github.com/hashicorp/terraform-plugin-framework v1.4.2
+	github.com/hashicorp/terraform-plugin-framework v1.5.0
 	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.30.0
 	github.com/operator-framework/api v0.20.0
