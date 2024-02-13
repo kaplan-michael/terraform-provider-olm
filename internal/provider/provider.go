@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -29,6 +30,8 @@ func New(version string) func() provider.Provider {
 // OLMProvider defines the provider implementation.
 type OLMProvider struct {
 	version string
+	config  *OLMProviderModel
+	client  *installer.Client
 }
 
 // Ensure OLMProvider implements the provider.Provider interface.
@@ -83,63 +86,72 @@ func (p *OLMProvider) Schema(ctx context.Context, req provider.SchemaRequest, re
 func (p *OLMProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
 	var data OLMProviderModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Check if at least one value is set.
-	if data.Kubeconfig.IsUnknown() || data.Kubeconfig.IsNull() {
-		if data.Host.IsUnknown() || data.Host.IsNull() ||
-			data.CACertificate.IsUnknown() || data.CACertificate.IsNull() ||
-			data.ClientCertificate.IsUnknown() || data.ClientCertificate.IsNull() ||
-			data.ClientKey.IsUnknown() || data.ClientKey.IsNull() {
-			resp.Diagnostics.AddError(
-				"Configuration Error",
-				"Either the `kubeconfig` must be configured, or `host`, `ca_certificate`,"+
-					" `client_certificate` and `client_key` must be configured for the provider",
-			)
-		}
-		return
+	// Store the version and configuration for later client initialization
+	p.config = &data
+	resp.ResourceData = p
+	resp.DataSourceData = p
+
+}
+
+func (p *OLMProvider) getClient() (*installer.Client, error) {
+
+	// Return the client if it's already been initialized
+	if p.client != nil {
+		return p.client, nil
 	}
-	var client *installer.Client
+
+	var config *rest.Config
 	var err error
 
-	if !data.Kubeconfig.IsUnknown() && !data.Kubeconfig.IsNull() {
+	// Check if the configuration is sufficient to initialize the client
+	//if p.config.Kubeconfig.IsUnknown() || p.config.Kubeconfig.IsNull() {
+	//	return nil, fmt.Errorf("insufficient configuration for OLM client initialization")
+	//} else if p.config.Host.IsUnknown() || p.config.Host.IsNull() ||
+	//	p.config.CACertificate.IsUnknown() || p.config.CACertificate.IsNull() ||
+	//	p.config.ClientCertificate.IsUnknown() || p.config.ClientCertificate.IsNull() ||
+	//	p.config.ClientKey.IsUnknown() || p.config.ClientKey.IsNull() {
+	//
+	//	return nil, fmt.Errorf("insufficient configuration for OLM client initialization")
+	//
+	//}
+	// Check if the configuration is sufficient load the config into the config struct
+	if !p.config.Kubeconfig.IsUnknown() && !p.config.Kubeconfig.IsNull() {
 
 		// Use the raw kubeconfig string to build the config
-		kubeconfigBytes := []byte(data.Kubeconfig.ValueString())
-		config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
+		kubeconfigBytes := []byte(p.config.Kubeconfig.ValueString())
+		config, err = clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
 		if err != nil {
-			// Handle error
-			return
+			return nil, err
 		}
-		client, err = installer.ClientForConfig(config)
-		if err != nil {
-			// Handle error
-			return
-		}
-	} else {
+	} else if !p.config.Host.IsUnknown() || !p.config.Host.IsNull() ||
+		!p.config.CACertificate.IsUnknown() || !p.config.CACertificate.IsNull() ||
+		!p.config.ClientCertificate.IsUnknown() || !p.config.ClientCertificate.IsNull() ||
+		!p.config.ClientKey.IsUnknown() || !p.config.ClientKey.IsNull() {
 		// Use the host, ca_certificate, client_certificate and client_key to create the client
-		config := &rest.Config{
-			Host: data.Host.ValueString(),
+		config = &rest.Config{
+			Host: p.config.Host.ValueString(),
 			TLSClientConfig: rest.TLSClientConfig{
-				CertData: []byte(data.ClientCertificate.ValueString()),
-				KeyData:  []byte(data.ClientKey.ValueString()),
-				CAData:   []byte(data.CACertificate.ValueString()),
+				CertData: []byte(p.config.ClientCertificate.ValueString()),
+				KeyData:  []byte(p.config.ClientKey.ValueString()),
+				CAData:   []byte(p.config.CACertificate.ValueString()),
 			},
 		}
-		client, err = installer.ClientForConfig(config)
-		if err != nil {
-			// Handle err
-			return
-		}
+	} else {
+		return nil, fmt.Errorf("fucked up: insufficient configuration for OLM client initialization")
 
 	}
 
-	// Provide the client to resources and data sources.
-	resp.ResourceData = client
-	resp.DataSourceData = client
+	// Initialize the client
+	p.client, err = installer.ClientForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.client, err
 }
 
 func (p *OLMProvider) Resources(ctx context.Context) []func() resource.Resource {

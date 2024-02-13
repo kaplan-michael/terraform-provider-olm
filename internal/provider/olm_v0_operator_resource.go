@@ -7,7 +7,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/kaplan-michael/terraform-provider-olm/internal/olm/installer"
 	olmapiv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	"strings"
 )
@@ -17,7 +16,7 @@ var _ resource.Resource = &Operatorv0Resource{}
 
 // Operatorv0Resource struct.
 type Operatorv0Resource struct {
-	client *installer.Client // olm client
+	provider *OLMProvider // olm provider
 }
 
 // NewOperatorv0Resource instantiates the resource with the Kubernetes client.
@@ -92,21 +91,22 @@ func (r *Operatorv0Resource) Configure(ctx context.Context, req resource.Configu
 	if req.ProviderData == nil {
 		return
 	}
-	client, ok := req.ProviderData.(*installer.Client)
+	p, ok := req.ProviderData.(*OLMProvider)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected *installer.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected *provider.Provider, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
 
-	r.client = client
+	r.provider = p
 
 }
 
 // Create method for Operatorv0Resource.
 func (r *Operatorv0Resource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+
 	var plan Operatorv0ResourceModel
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
@@ -114,8 +114,14 @@ func (r *Operatorv0Resource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
+	client, err := r.provider.getClient()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get client", err.Error())
+		return
+	}
+
 	// Get the subscription resources
-	resources, err := r.client.GetSubscriptionResources(
+	resources, err := client.GetSubscriptionResources(
 		plan.Name.ValueString(),
 		plan.Namespace.ValueString(),
 		plan.Channel.ValueString(),
@@ -133,7 +139,7 @@ func (r *Operatorv0Resource) Create(ctx context.Context, req resource.CreateRequ
 	}
 
 	// Create the Operator
-	operatorStatus, err := r.client.InstallOperator(ctx, resources)
+	operatorStatus, err := client.InstallOperator(ctx, resources)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Failed to install Operator",
@@ -170,8 +176,16 @@ func (r *Operatorv0Resource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
+	client, err := r.provider.getClient()
+
+	// If client can't be initialized due to missing config, clear the state
+	if err != nil {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
 	// Get the subscription resources
-	resources, err := r.client.GetSubscriptionResources(
+	resources, err := client.GetSubscriptionResources(
 		state.Name.ValueString(),
 		state.Namespace.ValueString(),
 		state.Channel.ValueString(),
@@ -189,7 +203,7 @@ func (r *Operatorv0Resource) Read(ctx context.Context, req resource.ReadRequest,
 	}
 
 	// Get the current status
-	status, err := r.client.GetSubscriptionStatus(ctx, resources)
+	status, err := client.GetSubscriptionStatus(ctx, resources)
 	if err != nil {
 		// The resource is not found, which we can assume is because it was deleted.
 		// Remove the resource from the state and return.
@@ -231,8 +245,14 @@ func (r *Operatorv0Resource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
+	client, err := r.provider.getClient()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get client", err.Error())
+		return
+	}
+
 	// Get the subscription resources
-	resources, err := r.client.GetSubscriptionResources(
+	resources, err := client.GetSubscriptionResources(
 		state.Name.ValueString(),
 		state.Namespace.ValueString(),
 		state.Channel.ValueString(),
@@ -250,14 +270,14 @@ func (r *Operatorv0Resource) Delete(ctx context.Context, req resource.DeleteRequ
 	}
 
 	// Delete Operator using OLM client
-	err = r.client.UninstallOperator(ctx, resources)
+	err = client.UninstallOperator(ctx, resources)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete Operator", err.Error())
 		return
 	}
 
 	// Get the current status to verify deletion
-	_, err = r.client.GetSubscriptionStatus(ctx, resources)
+	_, err = client.GetSubscriptionStatus(ctx, resources)
 	if err != nil {
 		// The resource is already deleted/not found, which is the desired outcome.
 		// Remove the resource from the state and return.

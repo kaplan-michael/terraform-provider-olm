@@ -7,7 +7,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/kaplan-michael/terraform-provider-olm/internal/olm/installer"
 	"strings"
 )
 
@@ -16,7 +15,7 @@ var _ resource.Resource = &OLMv0Resource{}
 
 // OLMv0Resource struct.
 type OLMv0Resource struct {
-	client *installer.Client // olm client
+	provider *OLMProvider // olm provider
 }
 
 // NewOLMv0Resource instantiates the resource with the Kubernetes client.
@@ -65,7 +64,7 @@ func (r *OLMv0Resource) Configure(ctx context.Context, req resource.ConfigureReq
 	if req.ProviderData == nil {
 		return
 	}
-	client, ok := req.ProviderData.(*installer.Client)
+	p, ok := req.ProviderData.(*OLMProvider)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
@@ -74,7 +73,7 @@ func (r *OLMv0Resource) Configure(ctx context.Context, req resource.ConfigureReq
 		return
 	}
 
-	r.client = client
+	r.provider = p
 
 }
 
@@ -87,12 +86,16 @@ func (r *OLMv0Resource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	olmStatus, err := r.client.InstallVersion(ctx, plan.Namespace.ValueString(), plan.Version.ValueString())
+	client, err := r.provider.getClient()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get client", err.Error())
+		return
+	}
+
+	olmStatus, err := client.InstallVersion(ctx, plan.Namespace.ValueString(), plan.Version.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Failed to install OLM",
-			fmt.Sprintf("Failed to install OLM: %v", err),
-		)
+			"Failed to install OLM", err.Error())
 		return
 	}
 
@@ -119,8 +122,17 @@ func (r *OLMv0Resource) Read(ctx context.Context, req resource.ReadRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	client, err := r.provider.getClient()
+
+	// If client can't be initialized due to missing config, clear the state
+	if err != nil {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
 	// Get the current status
-	status, err := r.client.GetStatus(ctx, state.Version.ValueString())
+	status, err := client.GetStatus(ctx, state.Version.ValueString())
 	if err != nil {
 		// The resource is not found, which we can assume is because it was deleted.
 		// Remove the resource from the state and return.
@@ -164,16 +176,22 @@ func (r *OLMv0Resource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
+	client, err := r.provider.getClient()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get client", err.Error())
+		return
+	}
+
 	// Check if the version has changed
 	if plan.Version != state.Version {
 		// Uninstall the current version
-		err := r.client.UninstallVersion(ctx, state.Version.ValueString())
+		err := client.UninstallVersion(ctx, state.Version.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to uninstall the current OLM version", err.Error())
 			return
 		}
 		// Install the new version
-		olmStatus, err := r.client.InstallVersion(ctx, plan.Namespace.ValueString(), plan.Version.ValueString())
+		olmStatus, err := client.InstallVersion(ctx, plan.Namespace.ValueString(), plan.Version.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to install the new OLM version", err.Error())
 			return
@@ -203,15 +221,21 @@ func (r *OLMv0Resource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
+	client, err := r.provider.getClient()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get client", err.Error())
+		return
+	}
+
 	// Delete OLM using OLM client
-	err := r.client.UninstallVersion(ctx, state.Version.ValueString())
+	err = client.UninstallVersion(ctx, state.Version.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete OLM", err.Error())
 		return
 	}
 
 	// Get the current status to verify deletion
-	_, err = r.client.GetStatus(ctx, state.Version.ValueString())
+	_, err = client.GetStatus(ctx, state.Version.ValueString())
 	if err != nil {
 		// The resource is already deleted/not found, which is the desired outcome.
 		// Remove the resource from the state and return.
